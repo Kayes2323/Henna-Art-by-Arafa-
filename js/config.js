@@ -14,12 +14,12 @@ export const SITE = {
   },
 
   whatsapp: {
-    number: "",           // <-- OWNER: put the WhatsApp number here, e.g. "8801712345678"
+    number: "8801604507268",        // <-- OWNER: put the WhatsApp number here, e.g. "8801712345678"
   },
 
   // Exact official URLs only. Empty string = link not set yet (its button shows "coming soon").
   social: {
-    facebook: "",         // <-- OWNER: official Facebook page URL
+    facebook: "https://www.facebook.com/share/1JE4SzuVGE/",       // <-- OWNER: official Facebook page URL
     instagram: "",        // optional
   },
 
