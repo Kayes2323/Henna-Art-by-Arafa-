@@ -1,5 +1,6 @@
 import { SITE } from "./config.js";
-import { CATEGORIES, DESIGNS, imgSrc, imgSrcset } from "./data.js";
+import { PRODUCTS, STYLES, DESIGNS, imgSrc, imgSrcset } from "./data.js";
+import { translate, detectLang, LANGS } from "./i18n.js";
 import { normalizeNumber, buildMessage, buildUrl, buildGeneralUrl } from "./whatsapp.js";
 
 document.documentElement.classList.add("js");
@@ -21,10 +22,43 @@ function el(tag, props = {}, ...kids) {
   return node;
 }
 
-const catById = Object.fromEntries(CATEGORIES.map((c) => [c.id, c]));
-const designById = Object.fromEntries(DESIGNS.map((d) => [d.id, d]));
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode: ignore */ } },
+};
+
+/* --------------------------------------------------------------- language */
+let lang = detectLang(store.get("henna-lang"), navigator.language, SITE.defaultLang);
+const t = (key, vars) => translate(lang, key, vars);
+const tr = (obj) => obj[lang] ?? obj.en;                     // { en, bn } helper
 const waNumber = normalizeNumber(SITE.whatsapp.number);
-const formatPrice = (d) => (typeof d.price === "number" ? `${SITE.currencySymbol}${d.price.toLocaleString("en-US")}` : "");
+const formatPrice = (item) => (typeof item.price === "number" ? `${SITE.currencySymbol}${item.price.toLocaleString("en-US")}` : "");
+const productById = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]));
+const designById = Object.fromEntries(DESIGNS.map((d) => [d.id, d]));
+const styleById = Object.fromEntries(STYLES.map((s) => [s.id, s]));
+
+function applyStatic() {
+  document.documentElement.lang = lang;
+  $$("[data-i18n]").forEach((n) => {
+    const text = t(n.dataset.i18n, { year: new Date().getFullYear() });
+    // keep announced strings that contain a child element (none today) intact
+    n.textContent = text;
+  });
+  $$("[data-i18n-aria]").forEach((n) => n.setAttribute("aria-label", t(n.dataset.i18nAria)));
+  $$("[data-i18n-ph]").forEach((n) => n.setAttribute("placeholder", t(n.dataset.i18nPh)));
+  $$(".lang button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+  navToggle.setAttribute("aria-label", t(navToggle.getAttribute("aria-expanded") === "true" ? "menuClose" : "menuOpen"));
+  document.title = lang === "bn" ? "হেনা আর্ট বাই আরাফা — প্রতিটি নকশায় শিল্পের ছোঁয়া" : "Henna Art by Arafa — Artistry in Every Detail";
+  wireContacts();
+}
+
+function setLang(next) {
+  if (!LANGS.includes(next) || next === lang) return;
+  lang = next;
+  store.set("henna-lang", lang);
+  renderAll(false);
+  if (lb.open) paintLightbox();
+}
 
 /* ------------------------------------------------------------------ header */
 const header = $(".site-header");
@@ -38,37 +72,40 @@ function setNav(open) {
   nav.classList.toggle("is-open", open);
   header.classList.toggle("is-open", open);
   navToggle.setAttribute("aria-expanded", String(open));
-  navToggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+  navToggle.setAttribute("aria-label", t(open ? "menuClose" : "menuOpen"));
   document.body.style.overflow = open ? "hidden" : "";
 }
 navToggle.addEventListener("click", () => setNav(navToggle.getAttribute("aria-expanded") !== "true"));
 $$("a", nav).forEach((a) => a.addEventListener("click", () => setNav(false)));
 addEventListener("keydown", (e) => e.key === "Escape" && setNav(false));
+$$(".lang button").forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
 
 /* ------------------------------------------------------- contact / social */
 function wireContacts() {
-  const general = buildGeneralUrl(waNumber);
+  const general = buildGeneralUrl(waNumber, lang);
   $$("[data-wa-general]").forEach((a) => {
     if (general) {
       a.href = general;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
     } else {
-      // number not configured yet: open the order dialog, which explains the situation
-      a.href = "#order";
-      a.addEventListener("click", (e) => { e.preventDefault(); openOrder(); });
+      a.href = "#contact";
     }
   });
   if (waNumber) $$("[data-wa-text]").forEach((a) => (a.textContent = `+${waNumber}`));
 
   const fb = SITE.social.facebook.trim();
   $$("[data-facebook]").forEach((a) => {
-    if (fb) a.href = fb;
-    else {
+    if (fb) {
+      a.href = fb;
+      a.removeAttribute("aria-disabled");
+      a.target = "_blank";
+      if (a.hasAttribute("data-fb-text")) a.textContent = "Henna Art by Arafa";
+    } else {
       a.removeAttribute("href");
       a.setAttribute("aria-disabled", "true");
       a.removeAttribute("target");
-      a.textContent = "Facebook page coming soon";
+      a.textContent = t("follow.soon");
     }
   });
   const ig = SITE.social.instagram.trim();
@@ -114,20 +151,19 @@ function initHero() {
   else setTimeout(start, 400);
 }
 
-/* ------------------------------------------------------------ category cards */
-function renderCategories() {
-  const list = $("#category-cards");
-  CATEGORIES.forEach((c) => {
-    const li = el("li", { class: "card reveal" },
+/* ---------------------------------------------------------- product cards */
+function renderProducts(first) {
+  const list = $("#product-cards");
+  list.replaceChildren(...PRODUCTS.map((p) => {
+    const price = formatPrice(p);
+    return el("li", { class: `card ${first ? "reveal" : "reveal in"}` },
       el("div", { class: "card__img" },
-        el("img", { src: imgSrc(c.cover, 800), srcset: imgSrcset(c.cover), sizes: "(min-width: 860px) 30vw, 90vw", alt: `${c.title} henna example`, width: 800, height: 1000, loading: "lazy", decoding: "async",
-          style: `object-position:${designById[c.cover]?.focus ?? "50% 50%"}` })),
-      el("h3", { class: "card__title" }, c.title, el("span", { lang: "bn", text: c.titleBn })),
-      el("p", { class: "card__blurb", text: c.blurb }),
-      el("button", { class: "btn btn--outline btn--small", type: "button", onclick: () => { setFilter(c.id); $("#art").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" }); } }, "Explore designs"),
+        el("img", { src: imgSrc(p.img, 800), srcset: imgSrcset(p.img), sizes: "(min-width: 860px) 30vw, 90vw", alt: tr(p.alt), width: 800, height: 1000, loading: "lazy", decoding: "async", style: `object-position:${p.focus}` })),
+      el("h3", { class: "card__title" }, tr(p.title), price ? el("span", { text: price }) : null),
+      el("p", { class: "card__blurb", text: tr(p.blurb) }),
+      el("button", { class: "btn btn--dark btn--small", type: "button", onclick: () => openOrder(p.id) }, t("shop.order")),
     );
-    list.append(li);
-  });
+  }));
 }
 
 /* ------------------------------------------------------------------- gallery */
@@ -138,42 +174,41 @@ const gallery = $("#gallery");
 const moreBtn = $("#gallery-more");
 const filtersEl = $("#filters");
 
-function visibleDesigns() {
-  return DESIGNS.filter((d) => filter === "all" || d.category === filter);
-}
+const visibleDesigns = () => DESIGNS.filter((d) => filter === "all" || d.style === filter);
 
 function renderFilters() {
   const mk = (id, label) => el("button", { class: "chip", type: "button", "data-filter": id, "aria-pressed": String(id === filter), onclick: () => setFilter(id) }, label);
-  filtersEl.replaceChildren(mk("all", "All designs"), ...CATEGORIES.map((c) => mk(c.id, c.title)));
+  filtersEl.replaceChildren(mk("all", t("art.all")), ...STYLES.map((s) => mk(s.id, tr(s.title))));
 }
 
 function setFilter(id) {
   filter = id;
   shown = PAGE;
   $$(".chip", filtersEl).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.filter === id)));
-  renderGallery();
+  renderGallery(true);
 }
 
-function tile(d, index) {
+function tile(d, index, animate) {
   const price = formatPrice(d);
-  return el("li", { class: "tile is-entering" },
-    el("button", { class: "tile__img", type: "button", "aria-label": `View larger: ${d.title}`, onclick: () => openLightbox(index) },
-      el("img", { src: imgSrc(d.id, 800), srcset: imgSrcset(d.id), sizes: "(min-width: 960px) 30vw, 46vw", alt: d.alt, width: 800, height: 1000, loading: index < 3 ? "eager" : "lazy", decoding: "async", style: `object-position:${d.focus}` })),
+  const title = tr(d.title);
+  return el("li", { class: `tile${animate ? " is-entering" : ""}` },
+    el("button", { class: "tile__img", type: "button", "aria-label": t("tile.view", { title }), onclick: () => openLightbox(index) },
+      el("img", { src: imgSrc(d.id, 800), srcset: imgSrcset(d.id), sizes: "(min-width: 960px) 30vw, 46vw", alt: title, width: 800, height: 1000, loading: index < 3 ? "eager" : "lazy", decoding: "async", style: `object-position:${d.focus}` })),
     el("div", { class: "tile__meta" },
-      el("p", { class: "tile__title" }, d.title, el("small", { text: catById[d.category].title })),
+      el("p", { class: "tile__title" }, title, el("small", { text: tr(styleById[d.style].title) })),
       price ? el("span", { class: "tile__price", text: price }) : null),
-    el("button", { class: "btn btn--dark btn--small", type: "button", onclick: () => openOrder(d.id) }, "Order Now"),
+    el("button", { class: "btn btn--dark btn--small", type: "button", onclick: () => openReserve(d.id) }, t("tile.reserve")),
   );
 }
 
-function renderGallery() {
+function renderGallery(animate = false) {
   const list = visibleDesigns();
-  gallery.replaceChildren(...list.slice(0, shown).map((d, i) => tile(d, i)));
+  gallery.replaceChildren(...list.slice(0, shown).map((d, i) => tile(d, i, animate)));
   const remaining = list.length - shown;
   moreBtn.hidden = remaining <= 0;
-  if (remaining > 0) moreBtn.textContent = `View more designs (${remaining})`;
+  if (remaining > 0) moreBtn.textContent = t("art.more", { n: remaining });
 }
-moreBtn.addEventListener("click", () => { shown += PAGE; renderGallery(); });
+moreBtn.addEventListener("click", () => { shown += PAGE; renderGallery(true); });
 
 /* ----------------------------------------------------------------- lightbox */
 const lb = $("#lightbox");
@@ -181,14 +216,14 @@ const lbImg = $("#lightbox-img");
 let lbIndex = 0;
 
 function paintLightbox() {
-  const list = visibleDesigns();
-  const d = list[lbIndex];
+  const d = visibleDesigns()[lbIndex];
+  if (!d) return;
   lbImg.src = imgSrc(d.id, 1200);
   lbImg.srcset = imgSrcset(d.id);
   lbImg.sizes = "90vw";
-  lbImg.alt = d.alt;
-  $("#lightbox-title").textContent = d.title;
-  $("#lightbox-order").onclick = () => { lb.close(); openOrder(d.id); };
+  lbImg.alt = tr(d.title);
+  $("#lightbox-title").textContent = tr(d.title);
+  $("#lightbox-reserve").onclick = () => { lb.close(); openReserve(d.id); };
 }
 function openLightbox(i) { lbIndex = i; paintLightbox(); lb.showModal(); }
 function stepLightbox(n) { const len = visibleDesigns().length; lbIndex = (lbIndex + n + len) % len; paintLightbox(); }
@@ -201,73 +236,137 @@ lb.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight") stepLightbox(1);
 });
 
-/* -------------------------------------------------------------- order dialog */
-const dlg = $("#order-dialog");
-const form = $("#order-form");
-const summary = $("#order-summary");
-const sel = $("#f-design");
-const NONE = "__none";
-
-function fillSelect() {
-  sel.replaceChildren(
-    el("option", { value: NONE, text: "Not sure yet — help me choose" }),
-    ...CATEGORIES.map((c) =>
-      el("optgroup", { label: c.title }, ...DESIGNS.filter((d) => d.category === c.id).map((d) => el("option", { value: d.id, text: d.title })))),
-  );
+/* ------------------------------------------------- order / reservation flows */
+function fillSelects() {
+  const keep = (sel, build) => { const v = sel.value; sel.replaceChildren(...build()); if ([...sel.options].some((o) => o.value === v)) sel.value = v; };
+  $$("[data-product-select]").forEach((s) => keep(s, () => PRODUCTS.map((p) => el("option", { value: p.id, text: tr(p.title) }))));
+  $$("[data-design-select]").forEach((s) => keep(s, () => [
+    el("option", { value: "", text: t("res.notSure") }),
+    ...STYLES.map((st) => el("optgroup", { label: tr(st.title) }, ...DESIGNS.filter((d) => d.style === st.id).map((d) => el("option", { value: d.id, text: tr(d.title) })))),
+  ]));
+  $$("[data-time-select]").forEach((s) => keep(s, () => ["any", "morning", "afternoon", "evening"].map((k) => el("option", { value: k, text: t(`time.${k}`) }))));
+  $$("[data-occasion-select]").forEach((s) => keep(s, () => ["none", "wedding", "eid", "party", "other"].map((k) => el("option", { value: k, text: t(`occ.${k}`) }))));
 }
 
-function openOrder(designId) {
-  form.hidden = false;
-  summary.hidden = true;
-  sel.value = designId && designById[designId] ? designId : NONE;
-  $("#f-date").min = new Date().toISOString().slice(0, 10);
-  const notice = $("#order-notice");
-  notice.hidden = !!waNumber;
-  if (!waNumber) notice.textContent = "WhatsApp ordering is being set up. You can fill in the form to preview your message, but it can’t be sent yet.";
-  dlg.showModal();
-  $("#f-name").focus();
+function prettyDate(iso) {
+  if (!iso) return "";
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(lang === "bn" ? "bn-BD" : "en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-function collect() {
-  const d = designById[sel.value];
-  return {
-    designTitle: d ? d.title : "",
-    price: d ? formatPrice(d) : "",
-    name: $("#f-name").value,
-    date: $("#f-date").value,
-    notes: $("#f-notes").value,
-  };
-}
+function makeFlow(dialog, { kind, required, collect }) {
+  const form = $("[data-form]", dialog);
+  const summary = $("[data-summary]", dialog);
+  const send = $("[data-send]", dialog);
+  let lastMessage = "";
 
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const nameInput = $("#f-name");
-  const bad = !nameInput.value.trim();
-  nameInput.setAttribute("aria-invalid", String(bad));
-  $("#err-name").hidden = !bad;
-  if (bad) { nameInput.focus(); return; }
+  const show = (which) => { form.hidden = which !== "form"; summary.hidden = which !== "summary"; };
 
-  const msg = buildMessage(collect());
-  $("#order-preview").textContent = msg;
-  const send = $("#order-send");
-  const url = buildUrl(waNumber, msg);
-  if (url) {
-    send.href = url;
-    send.removeAttribute("aria-disabled");
-    send.textContent = "Open WhatsApp";
-  } else {
-    send.removeAttribute("href");
-    send.setAttribute("aria-disabled", "true");
-    send.textContent = "WhatsApp not set up yet";
+  function open(prefill = {}) {
+    show("form");
+    form.reset();
+    Object.entries(prefill).forEach(([name, value]) => { if (form.elements[name]) form.elements[name].value = value; });
+    const date = form.elements.date;
+    if (date) date.min = new Date().toISOString().slice(0, 10);
+    $$("[data-err]", form).forEach((n) => (n.hidden = true));
+    $$("[aria-invalid]", form).forEach((n) => n.removeAttribute("aria-invalid"));
+    const notice = $("[data-notice]", dialog);
+    notice.hidden = !!waNumber;
+    notice.textContent = t("notice.unset");
+    dialog.showModal();
   }
-  form.hidden = true;
-  summary.hidden = false;
-  send.focus();
+
+  // clear a field's error as soon as the visitor edits it
+  form.addEventListener("input", (e) => {
+    const field = e.target;
+    if (!field.name) return;
+    field.removeAttribute("aria-invalid");
+    const err = $(`[data-err="${field.name}"]`, form);
+    if (err) err.hidden = true;
+  });
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    let firstBad = null;
+    required.forEach((name) => {
+      const field = form.elements[name];
+      const bad = !String(field.value).trim();
+      field.setAttribute("aria-invalid", String(bad));
+      const err = $(`[data-err="${name}"]`, form);
+      if (err) err.hidden = !bad;
+      if (bad && !firstBad) firstBad = field;
+    });
+    if (firstBad) { firstBad.focus(); return; }
+
+    lastMessage = buildMessage(kind, collect(form), lang);
+    $("[data-preview]", dialog).textContent = lastMessage;
+    paintSend();
+    show("summary");
+    send.focus();
+  });
+
+  function paintSend() {
+    const url = buildUrl(waNumber, lastMessage);
+    if (url) {
+      send.href = url;
+      send.removeAttribute("aria-disabled");
+      send.textContent = t("sum.open");
+    } else {
+      send.removeAttribute("href");
+      send.setAttribute("aria-disabled", "true");
+      send.textContent = t("sum.unset");
+    }
+  }
+
+  $("[data-back]", dialog).addEventListener("click", () => { show("form"); (form.elements.name || form.elements[0]).focus(); });
+  $("[data-close]", dialog).addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
+  return { open };
+}
+
+const orderFlow = makeFlow($("#order-dialog"), {
+  kind: "order",
+  required: ["name", "address"],
+  collect: (f) => {
+    const p = productById[f.elements.product.value];
+    const qty = Math.min(99, Math.max(1, parseInt(f.elements.qty.value, 10) || 1));
+    return { product: tr(p.title), qty, price: formatPrice(p), name: f.elements.name.value, address: f.elements.address.value, notes: f.elements.notes.value };
+  },
 });
-$("#order-back").addEventListener("click", () => { summary.hidden = true; form.hidden = false; $("#f-name").focus(); });
-$("[data-close]", dlg).addEventListener("click", () => dlg.close());
-dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
-$$("[data-order]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); openOrder(); }));
+
+const reserveFlow = makeFlow($("#reserve-dialog"), {
+  kind: "reservation",
+  required: ["name", "date"],
+  collect: (f) => {
+    const d = designById[f.elements.design.value];
+    const time = f.elements.time.value;
+    const occ = f.elements.occasion.value;
+    return {
+      design: d ? tr(d.title) : "",
+      price: d ? formatPrice(d) : "",
+      name: f.elements.name.value,
+      date: prettyDate(f.elements.date.value),
+      time: time === "any" ? "" : t(`time.${time}`),
+      occasion: occ === "none" ? "" : t(`occ.${occ}`),
+      notes: f.elements.notes.value,
+    };
+  },
+});
+
+function openOrder(productId) { orderFlow.open(productId ? { product: productId } : {}); }
+function openReserve(designId) { reserveFlow.open(designId ? { design: designId } : {}); }
+
+// quantity stepper
+$$(".stepper").forEach((s) => {
+  const input = $("input", s);
+  $$("button", s).forEach((b) => b.addEventListener("click", () => {
+    input.value = Math.min(99, Math.max(1, (parseInt(input.value, 10) || 1) + Number(b.dataset.step)));
+  }));
+});
+
+$$("[data-order]").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); openOrder(); }));
+$$("[data-reserve]").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); openReserve(); }));
 
 /* ------------------------------------------------------- follow-section peek */
 function renderPeek() {
@@ -277,9 +376,22 @@ function renderPeek() {
   });
 }
 
+/* --------------------------------------------------- mobile quick action bar */
+function initQuickbar() {
+  const bar = $("#quickbar");
+  const hero = $(".hero");
+  const contact = $("#contact");
+  if (!("IntersectionObserver" in window)) return;
+  let heroVisible = true;
+  let contactVisible = false;
+  const update = () => { bar.hidden = heroVisible || contactVisible; document.body.classList.toggle("has-quickbar", !bar.hidden); };
+  new IntersectionObserver(([e]) => { heroVisible = e.isIntersecting; update(); }, { threshold: 0.3 }).observe(hero);
+  new IntersectionObserver(([e]) => { contactVisible = e.isIntersecting; update(); }, { threshold: 0.1 }).observe(contact);
+}
+
 /* ------------------------------------------------------------------- reveal */
 function initReveal() {
-  const items = $$(".reveal");
+  const items = $$(".reveal:not(.in)");
   if (reduceMotion || !("IntersectionObserver" in window)) { items.forEach((n) => n.classList.add("in")); return; }
   const io = new IntersectionObserver((entries) => {
     entries.forEach((en) => { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
@@ -288,12 +400,16 @@ function initReveal() {
 }
 
 /* --------------------------------------------------------------------- boot */
-fillSelect();
-renderCategories();
-renderFilters();
-renderGallery();
+function renderAll(first) {
+  applyStatic();
+  fillSelects();
+  renderProducts(first);
+  renderFilters();
+  renderGallery(false);
+}
+
+renderAll(true);
 renderPeek();
-wireContacts();
 initHero();
+initQuickbar();
 initReveal();
-$("#year").textContent = new Date().getFullYear();

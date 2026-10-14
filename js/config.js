@@ -23,5 +23,8 @@ export const SITE = {
     instagram: "",        // optional
   },
 
+  // "en" or "bn": language shown first to visitors (a visitor's own choice is remembered; Bangla browsers get Bangla).
+  defaultLang: "en",
+
   currencySymbol: "৳",
 };

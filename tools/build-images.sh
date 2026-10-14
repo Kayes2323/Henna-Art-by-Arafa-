@@ -12,6 +12,11 @@ mkdir -p "$D" "$OUT"
 convert $O/d14.jpg -crop 488x610+270+430 +repage -quality 92 $D/d14-nails.jpg
 convert $O/d11.jpg -crop 1625x1790+0+230 +repage -quality 92 $D/d11-clean.jpg
 
+# --- Product photos (henna cones) ---
+convert $O/p01-organic.jpg -crop 880x1100+320+640 +repage -quality 92 $D/p01-organic.jpg
+convert $O/p02-pakistani.jpg -crop 726x726+360+360 +repage -quality 92 $D/p02-pakistani.jpg   # excludes the poster's title + price badge
+convert $O/p03-nail-cones.jpg -crop 1536x1920+0+60 +repage -quality 92 $D/p03-nail-cones.jpg
+
 # --- Web variants: id:source ---
 make() { # id src
   for w in 480 800 1200; do
@@ -21,6 +26,9 @@ make() { # id src
 for id in d01 d03 d04 d06 d07 d10 d15 d16 d17 d19 d20; do make $id $O/$id.jpg; done
 make d11 $D/d11-clean.jpg
 make d14 $D/d14-nails.jpg
+make p01 $D/p01-organic.jpg
+make p02 $D/p02-pakistani.jpg
+make p03 $D/p03-nail-cones.jpg
 
 # --- Wide editorial strips (landscape) ---
 convert $O/d09.jpg -auto-orient -gravity center -crop 2048x820+0+60 +repage -resize 2000x -strip -quality 78 $OUT/strip-d09-2000.webp

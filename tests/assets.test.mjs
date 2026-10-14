@@ -1,32 +1,44 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { CATEGORIES, DESIGNS, UNUSED, WIDTHS, imgSrc } from "../js/data.js";
+import { PRODUCTS, STYLES, DESIGNS, UNUSED, WIDTHS, imgSrc } from "../js/data.js";
+import { SITE } from "../js/config.js";
 
 const root = new URL("../", import.meta.url);
 const exists = (p) => existsSync(new URL(p, root));
 
-test("every design has all web image sizes and an original", () => {
-  for (const d of DESIGNS) {
-    for (const w of WIDTHS) assert.ok(exists(imgSrc(d.id, w)), `${imgSrc(d.id, w)} missing`);
-    assert.ok(exists(`assets/originals/${d.id}.jpg`), `original ${d.id} missing`);
+test("every product and design has all web image sizes and an original/derived source", () => {
+  for (const item of [...PRODUCTS.map((p) => ({ id: p.img })), ...DESIGNS]) {
+    for (const w of WIDTHS) assert.ok(exists(imgSrc(item.id, w)), `${imgSrc(item.id, w)} missing`);
   }
+  for (const d of DESIGNS) assert.ok(exists(`assets/originals/${d.id}.jpg`), `original ${d.id} missing`);
 });
 
-test("design ids are unique and categories valid; covers exist", () => {
+test("ids unique, styles valid, every style used, three products", () => {
   const ids = DESIGNS.map((d) => d.id);
   assert.equal(new Set(ids).size, ids.length);
-  const cats = new Set(CATEGORIES.map((c) => c.id));
-  for (const d of DESIGNS) assert.ok(cats.has(d.category), `${d.id}: bad category`);
-  for (const c of CATEGORIES) {
-    assert.ok(ids.includes(c.cover), `cover ${c.cover} not in designs`);
-    assert.ok(DESIGNS.some((d) => d.category === c.id), `category ${c.id} is empty`);
-  }
+  const styles = new Set(STYLES.map((s) => s.id));
+  for (const d of DESIGNS) assert.ok(styles.has(d.style), `${d.id}: bad style`);
+  for (const s of STYLES) assert.ok(DESIGNS.some((d) => d.style === s.id), `style ${s.id} is empty`);
   for (const id of Object.keys(UNUSED)) assert.ok(!ids.includes(id), `${id} is both used and unused`);
+  assert.deepEqual(PRODUCTS.map((p) => p.id), ["organic", "pakistani", "nail"]);
+});
+
+test("every visible text has English and Bangla", () => {
+  const need = (o, where) => { assert.ok(o.en && o.bn, `${where} needs en+bn`); };
+  for (const p of PRODUCTS) { need(p.title, p.id); need(p.blurb, p.id); need(p.alt, p.id); }
+  for (const s of STYLES) need(s.title, s.id);
+  for (const d of DESIGNS) need(d.title, d.id);
 });
 
 test("prices are never invented (null or a positive number)", () => {
-  for (const d of DESIGNS) assert.ok(d.price === null || (typeof d.price === "number" && d.price > 0));
+  for (const x of [...PRODUCTS, ...DESIGNS]) assert.ok(x.price === null || (typeof x.price === "number" && x.price > 0));
+});
+
+test("config shape", () => {
+  assert.ok(["en", "bn"].includes(SITE.defaultLang));
+  assert.equal(typeof SITE.whatsapp.number, "string");
+  assert.equal(typeof SITE.social.facebook, "string");
 });
 
 test("every local path referenced in index.html / css exists", () => {
@@ -44,8 +56,8 @@ test("every local path referenced in index.html / css exists", () => {
   for (const r of refs) assert.ok(exists(r.replace(/^css\/\.\.\//, "")), `missing: ${r}`);
 });
 
-test("hero video files exist and are non-trivial", () => {
-  for (const f of ["hero-portrait.mp4", "hero-landscape.mp4", "hero-portrait-poster.webp", "hero-landscape-poster.webp"]) {
+test("hero video files exist for both formats", () => {
+  for (const f of ["hero-portrait.mp4", "hero-portrait.webm", "hero-landscape.mp4", "hero-landscape.webm", "hero-portrait-poster.webp", "hero-landscape-poster.webp"]) {
     assert.ok(exists(`assets/video/${f}`), f);
   }
 });
